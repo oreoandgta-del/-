@@ -1,2 +1,360 @@
-# -
-監査
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CPA短答対策 クイズ演習アプリ</title>
+  <style>
+    :root {
+      --bg: #f4f6f9;
+      --card: #ffffff;
+      --primary: #1a56db;
+      --primary-hover: #1e429f;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --badge-a: #fee2e2;
+      --badge-a-text: #991b1b;
+      --badge-b: #fef3c7;
+      --badge-b-text: #92400e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Sans", "Noto Sans JP", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+    }
+    .container {
+      max-width: 780px;
+      margin: 0 auto;
+      padding: 20px 16px 60px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    h1 { font-size: 1.25rem; margin: 0; }
+    .controls {
+      background: var(--card);
+      padding: 16px;
+      border-radius: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      margin-bottom: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+    .file-label {
+      background: var(--primary);
+      color: #fff;
+      padding: 8px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+    .file-label:hover { background: var(--primary-hover); }
+    input[type="file"] { display: none; }
+    select, button {
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      font-size: 0.9rem;
+      background: #fff;
+      cursor: pointer;
+    }
+    button.btn-primary {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      font-weight: 600;
+    }
+    button.btn-primary:hover { background: var(--primary-hover); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    .card {
+      background: var(--card);
+      padding: 24px;
+      border-radius: 14px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+    }
+    .meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      margin-left: 8px;
+    }
+    .badge-A { background: var(--badge-a); color: var(--badge-a-text); }
+    .badge-B { background: var(--badge-b); color: var(--badge-b-text); }
+    .question-body {
+      font-size: 1.02rem;
+      margin-bottom: 20px;
+      word-break: break-word;
+    }
+    .answer-box {
+      display: none;
+      margin-top: 20px;
+      padding: 18px;
+      background: #f8fafc;
+      border-left: 4px solid var(--primary);
+      border-radius: 8px;
+    }
+    .answer-box.show { display: block; }
+    .correct-val {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 10px;
+    }
+    .nav-bar {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 22px;
+      flex-wrap: wrap;
+    }
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>CPA短答対策 クイズ演習</h1>
+      <span id="progressText" style="font-size:0.9rem; color:var(--muted);">CSV未読込</span>
+    </header>
+
+    <div class="controls">
+      <label class="file-label">
+        CSVファイルを選択
+        <input type="file" id="csvInput" accept=".csv,text/csv" />
+      </label>
+
+      <select id="rankFilter">
+        <option value="ALL">すべて（A・B）</option>
+        <option value="A">重要度 A のみ</option>
+        <option value="B">重要度 B のみ</option>
+      </select>
+
+      <select id="orderMode">
+        <option value="seq">問題番号順</option>
+        <option value="rand">ランダム出題</option>
+      </select>
+
+      <button id="onlyWrongBtn" title="復習チェックを付けた問題だけ出題">復習リストのみ (0)</button>
+    </div>
+
+    <div id="quizArea" class="card">
+      <div class="empty-state">
+        上の「CSVファイルを選択」から、AIで作成した問題集CSVを読み込んでください。<br />
+        <small>※リポジトリ内に <code>data.csv</code> を置けば自動読み込みにも対応できます</small>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let allQuestions = [];
+    let filteredQuestions = [];
+    let currentIndex = 0;
+    let wrongSet = new Set(JSON.parse(localStorage.getItem("cpa_wrong_ids") || "[]"));
+    let onlyWrong = false;
+
+    // RFC4180準拠のCSVパーサー（ダブルクォーテーション・セル内改行対応）
+    function parseCSV(text) {
+      const rows = [];
+      let row = [];
+      let cell = "";
+      let inQuotes = false;
+      for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        const next = text[i + 1];
+        if (inQuotes) {
+          if (ch === '"' && next === '"') {
+            cell += '"';
+            i++;
+          } else if (ch === '"') {
+            inQuotes = false;
+          } else {
+            cell += ch;
+          }
+        } else {
+          if (ch === '"') {
+            inQuotes = true;
+          } else if (ch === ",") {
+            row.push(cell);
+            cell = "";
+          } else if (ch === "\r" && next === "\n") {
+            row.push(cell);
+            rows.push(row);
+            row = [];
+            cell = "";
+            i++;
+          } else if (ch === "\n" || ch === "\r") {
+            row.push(cell);
+            rows.push(row);
+            row = [];
+            cell = "";
+          } else {
+            cell += ch;
+          }
+        }
+      }
+      if (cell.length > 0 || row.length > 0) {
+        row.push(cell);
+        rows.push(row);
+      }
+      return rows;
+    }
+
+    function loadCSVText(text) {
+      const rows = parseCSV(text.trim());
+      if (rows.length < 2) return;
+      // 1行目はヘッダー想定: 問題番号, 重要度, 問題文と選択肢, 正解, 解説
+      allQuestions = rows.slice(1).filter(r => r.length >= 4).map((r, idx) => ({
+        id: r[0] || `Q-${idx + 1}`,
+        rank: (r[1] || "").trim().toUpperCase(),
+        question: r[2] || "",
+        answer: r[3] || "",
+        explanation: r[4] || ""
+      }));
+      applyFilter();
+    }
+
+    function applyFilter() {
+      const rank = document.getElementById("rankFilter").value;
+      const order = document.getElementById("orderMode").value;
+
+      filteredQuestions = allQuestions.filter(q => {
+        if (rank !== "ALL" && q.rank !== rank) return false;
+        if (onlyWrong && !wrongSet.has(q.id)) return false;
+        return true;
+      });
+
+      if (order === "rand") {
+        for (let i = filteredQuestions.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [filteredQuestions[i], filteredQuestions[j]] = [filteredQuestions[j], filteredQuestions[i]];
+        }
+      }
+      currentIndex = 0;
+      updateWrongBtn();
+      renderQuestion();
+    }
+
+    function updateWrongBtn() {
+      const btn = document.getElementById("onlyWrongBtn");
+      btn.textContent = `復習リストのみ (${wrongSet.size})`;
+      btn.style.background = onlyWrong ? "#fee2e2" : "#fff";
+      btn.style.borderColor = onlyWrong ? "#ef4444" : "var(--border)";
+    }
+
+    function toggleWrong(id) {
+      if (wrongSet.has(id)) {
+        wrongSet.delete(id);
+      } else {
+        wrongSet.add(id);
+      }
+      localStorage.setItem("cpa_wrong_ids", JSON.stringify([...wrongSet]));
+      updateWrongBtn();
+      renderQuestion(document.getElementById("answerBox")?.classList.contains("show"));
+    }
+
+    function formatHTML(str) {
+      return str.replace(/\n/g, "<br>");
+    }
+
+    function renderQuestion(keepAnswerOpen = false) {
+      const area = document.getElementById("quizArea");
+      const progress = document.getElementById("progressText");
+
+      if (filteredQuestions.length === 0) {
+        progress.textContent = "0 問";
+        area.innerHTML = `<div class="empty-state">該当する問題がありません。フィルター条件やCSVを確認してください。</div>`;
+        return;
+      }
+
+      const q = filteredQuestions[currentIndex];
+      const isMarked = wrongSet.has(q.id);
+      progress.textContent = `${currentIndex + 1} / ${filteredQuestions.length} 問`;
+
+      area.innerHTML = `
+        <div class="meta">
+          <div>
+            <strong>${q.id}</strong>
+            ${q.rank ? `<span class="badge badge-${q.rank}">重要度 ${q.rank}</span>` : ""}
+          </div>
+          <button onclick="toggleWrong('${q.id.replace(/'/g, "\\'")}')">
+            ${isMarked ? "★ 復習リスト済" : "☆ 要復習に追加"}
+          </button>
+        </div>
+
+        <div class="question-body">${formatHTML(q.question)}</div>
+
+        <button class="btn-primary" onclick="document.getElementById('answerBox').classList.toggle('show')">
+          解答・解説を表示 / 隠す
+        </button>
+
+        <div id="answerBox" class="answer-box ${keepAnswerOpen ? "show" : ""}">
+          <div class="correct-val">正解：${formatHTML(q.answer)}</div>
+          <div>${formatHTML(q.explanation)}</div>
+        </div>
+
+        <div class="nav-bar">
+          <button onclick="move(-1)" ${currentIndex === 0 ? "disabled" : ""}>← 前の問題</button>
+          <button class="btn-primary" onclick="move(1)" ${currentIndex >= filteredQuestions.length - 1 ? "disabled" : ""}>次の問題 →</button>
+        </div>
+      `;
+    }
+
+    function move(delta) {
+      const next = currentIndex + delta;
+      if (next >= 0 && next < filteredQuestions.length) {
+        currentIndex = next;
+        renderQuestion(false);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    }
+
+    document.getElementById("csvInput").addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => loadCSVText(ev.target.result);
+      reader.readAsText(file, "UTF-8");
+    });
+
+    document.getElementById("rankFilter").addEventListener("change", applyFilter);
+    document.getElementById("orderMode").addEventListener("change", applyFilter);
+    document.getElementById("onlyWrongBtn").addEventListener("click", () => {
+      onlyWrong = !onlyWrong;
+      applyFilter();
+    });
+
+    // 同じディレクトリに data.csv が置かれていれば自動読み込み
+    fetch("./data.csv")
+      .then(res => res.ok ? res.text() : Promise.reject())
+      .then(text => loadCSVText(text))
+      .catch(() => {});
+  </script>
+</body>
+</html>
+
